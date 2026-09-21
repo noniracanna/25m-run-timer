@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>25m走 リアルタイム計測</title>
+  <style>
+    * { box-sizing: border-box; touch-action: manipulation; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f2f4f7; margin: 0; padding: 16px;
+      display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+    }
+    .card {
+      background: #fff; border-radius: 16px; padding: 20px;
+      width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    h2 { margin: 0 0 16px 0; text-align: center; color: #1a73e8; font-size: 20px; }
+    label { font-weight: bold; font-size: 14px; color: #333; display: block; margin-bottom: 6px; }
+    input[type="password"], select {
+      width: 100%; padding: 12px; font-size: 16px;
+      border-radius: 10px; border: 1px solid #ccc; background: #f9f9f9; margin-bottom: 16px;
+    }
+    .radio-group { display: flex; gap: 10px; margin-bottom: 20px; }
+    .radio-btn { flex: 1; text-align: center; }
+    .radio-btn input { display: none; }
+    .radio-btn span {
+      display: block; padding: 12px; border-radius: 10px; border: 2px solid #ddd;
+      font-weight: bold; background: #fafafa; color: #666; cursor: pointer;
+    }
+    .radio-btn input:checked + span { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+    .timer-display {
+      font-family: monospace; font-size: 54px; font-weight: bold;
+      background: #111; color: #00ff66; text-align: center;
+      padding: 16px 0; border-radius: 12px; margin-bottom: 20px; letter-spacing: 2px;
+    }
+    .btn {
+      width: 100%; padding: 16px; font-size: 18px; font-weight: bold;
+      border: none; border-radius: 12px; margin-bottom: 10px; color: #fff; cursor: pointer;
+    }
+    .btn-auth { background-color: #1a73e8; }
+    .btn-start { background-color: #34a853; }
+    .btn-stop { background-color: #ea4335; }
+    .btn-reset { background-color: #7f8c8d; }
+    .status { text-align: center; font-size: 13px; color: #666; min-height: 20px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>🏃 25m走 リアルタイム計測</h2>
+
+  <!-- 認証画面 -->
+  <div id="authSection">
+    <label for="passcode">計測用パスコードを入力</label>
+    <input type="password" id="passcode" placeholder="パスコード" inputmode="numeric">
+    <button class="btn btn-auth" onclick="authenticate()">認証して名簿取得</button>
+  </div>
+
+  <!-- 計測画面（初期状態は非表示） -->
+  <div id="appSection" style="display:none;">
+    <label for="studentSelect">園児を選択</label>
+    <select id="studentSelect">
+      <option value="">読み込み中...</option>
+    </select>
+
+    <label>計測回数</label>
+    <div class="radio-group">
+      <label class="radio-btn">
+        <input type="radio" name="attempt" value="1" checked>
+        <span>1回目</span>
+      </label>
+      <label class="radio-btn">
+        <input type="radio" name="attempt" value="2">
+        <span>2回目</span>
+      </label>
+    </div>
+
+    <div class="timer-display" id="display">00.00</div>
+
+    <button class="btn btn-start" id="startBtn" onclick="startTimer()">START</button>
+    <button class="btn btn-stop" id="stopBtn" onclick="stopAndRecord()" style="display:none;">STOP & 記録</button>
+    <button class="btn btn-reset" id="resetBtn" onclick="resetTimer()">リセット</button>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+  // ステップ1で発行したGASのWeb API URLを設定
+  const API_URL = "YOUR_GAS_DEPLOYED_URL_HERE";
+  
+  let passcode = "";
+  let startTime = 0;
+  let timerId = null;
+  let isRunning = false;
+  let currentTimeStr = "00.00";
+
+  async function authenticate() {
+    passcode = document.getElementById("passcode").value;
+    if (!passcode) return alert("パスコードを入力してください");
+
+    document.getElementById("status").innerText = "認証＆名簿データ通信中...";
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "getStudents", passcode: passcode })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        document.getElementById("authSection").style.display = "none";
+        document.getElementById("appSection").style.display = "block";
+        document.getElementById("status").innerText = "";
+
+        const select = document.getElementById("studentSelect");
+        select.innerHTML = '<option value="">-- 園児を選択 --</option>';
+        data.students.forEach(s => {
+          const opt = document.createElement("option");
+          opt.value = s.row;
+          opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+      } else {
+        document.getElementById("status").innerText = "❌ " + data.message;
+      }
+    } catch (err) {
+      document.getElementById("status").innerText = "通信エラーが発生しました";
+    }
+  }
+
+  function updateTimer() {
+    if (!isRunning) return;
+    const elapsed = (performance.now() - startTime) / 1000;
+    currentTimeStr = elapsed.toFixed(2);
+    document.getElementById("display").innerText = currentTimeStr;
+    timerId = requestAnimationFrame(updateTimer);
+  }
+
+  function startTimer() {
+    if (!document.getElementById("studentSelect").value) return alert("園児を選択してください");
+    isRunning = true;
+    startTime = performance.now();
+    document.getElementById("startBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "block";
+    document.getElementById("status").innerText = "計測中...";
+    requestAnimationFrame(updateTimer);
+  }
+
+  async function stopAndRecord() {
+    if (!isRunning) return;
+    isRunning = false;
+    cancelAnimationFrame(timerId);
+
+    document.getElementById("startBtn").style.display = "block";
+    document.getElementById("stopBtn").style.display = "none";
+
+    const select = document.getElementById("studentSelect");
+    const row = select.value;
+    const studentName = select.options[select.selectedIndex].text;
+    const attempt = document.querySelector('input[name="attempt"]:checked').value;
+    const recordedTime = currentTimeStr;
+
+    document.getElementById("status").innerText = `スプレッドシートへ送信中...`;
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "recordTime",
+          passcode: passcode,
+          row: row,
+          attempt: attempt,
+          time: recordedTime
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById("status").innerText = `✅ ${studentName} (${attempt}回目): ${recordedTime}秒 記録完了`;
+      } else {
+        document.getElementById("status").innerText = "❌ " + data.message;
+      }
+    } catch (err) {
+      document.getElementById("status").innerText = "❌ 送信に失敗しました";
+    }
+  }
+
+  function resetTimer() {
+    isRunning = false;
+    cancelAnimationFrame(timerId);
+    currentTimeStr = "00.00";
+    document.getElementById("display").innerText = "00.00";
+    document.getElementById("startBtn").style.display = "block";
+    document.getElementById("stopBtn").style.display = "none";
+    document.getElementById("status").innerText = "";
+  }
+</script>
+
+</body>
+</html>

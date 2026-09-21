@@ -53,11 +53,11 @@
   <!-- 認証画面 -->
   <div id="authSection">
     <label for="passcode">計測用パスコードを入力</label>
-    <input type="password" id="passcode" placeholder="パスコード" inputmode="numeric">
+    <input type="password" id="passcode" placeholder="パスコード" inputmode="numeric" onkeydown="if(event.key === 'Enter'){ authenticate(); }">
     <button class="btn btn-auth" onclick="authenticate()">認証して名簿取得</button>
   </div>
 
-  <!-- 計測画面（初期状態は非表示） -->
+  <!-- 計測画面 -->
   <div id="appSection" style="display:none;">
     <label for="studentSelect">園児を選択</label>
     <select id="studentSelect">
@@ -87,7 +87,7 @@
 </div>
 
 <script>
-  // ステップ1で発行したGASのWeb API URLを設定
+  // GASのWeb API URL
   const API_URL = "https://script.google.com/macros/s/AKfycbysoF7VZ-iLuOCt4e3Kh4EyVIIhIiP6Bbze8ZDC3ZbD8W1Vyqm8TDSPn5GL8fW3pVOw/exec";
   
   let passcode = "";
@@ -105,6 +105,7 @@
     try {
       const res = await fetch(API_URL, {
         method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "getStudents", passcode: passcode })
       });
       const data = await res.json();
@@ -126,7 +127,8 @@
         document.getElementById("status").innerText = "❌ " + data.message;
       }
     } catch (err) {
-      document.getElementById("status").innerText = "通信エラーが発生しました";
+      console.error(err);
+      document.getElementById("status").innerText = "❌ 通信エラーが発生しました";
     }
   }
 
@@ -167,6 +169,7 @@
     try {
       const res = await fetch(API_URL, {
         method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "recordTime",
           passcode: passcode,
@@ -182,6 +185,7 @@
         document.getElementById("status").innerText = "❌ " + data.message;
       }
     } catch (err) {
+      console.error(err);
       document.getElementById("status").innerText = "❌ 送信に失敗しました";
     }
   }
